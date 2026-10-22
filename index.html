@@ -50,12 +50,6 @@
   input[type="range"] { width: 140px; accent-color: var(--accent); }
   #zoomLabel { min-width: 48px; font-variant-numeric: tabular-nums; color: var(--muted); }
   .check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-  .spacer { flex: 1; }
-  a.dl {
-    color: var(--ink); text-decoration: none;
-    border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px;
-  }
-  a.dl:hover { border-color: var(--muted); }
 
   main { padding: 32px 24px 64px; }
   figure { margin: 0 0 48px; }
@@ -94,6 +88,9 @@
     position: absolute; top: 9px; transform: translateX(-50%);
     font-size: 11px; color: var(--muted); white-space: nowrap;
   }
+  figcaption .meta { display: flex; gap: 14px; align-items: baseline; }
+  figcaption .meta a { color: var(--ink); }
+  .urdu-line { font-size: 13px; color: var(--muted); margin-left: 10px; font-weight: 400; }
   .notes { max-width: 720px; color: var(--muted); }
   .notes code { color: var(--ink); }
 </style>
@@ -103,11 +100,21 @@
   <h1>Shop banner <span>· 12 ft × 2 ft · Shaizy × Boson Studio</span></h1>
 
   <div class="group">
-    <label>Version</label>
-    <div class="seg" id="version">
-      <button data-v="both" aria-pressed="true">Both</button>
+    <label>Theme</label>
+    <div class="seg" id="theme">
+      <button data-v="all" aria-pressed="true">All</button>
       <button data-v="dark" aria-pressed="false">Dark</button>
       <button data-v="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>Urdu lines</label>
+    <div class="seg" id="urdu">
+      <button data-v="all" aria-pressed="true">All</button>
+      <button data-v="none" aria-pressed="false">None</button>
+      <button data-v="brands" aria-pressed="false">Brand lines</button>
+      <button data-v="welcome" aria-pressed="false">Welcome</button>
     </div>
   </div>
 
@@ -126,30 +133,13 @@
       <button data-p="dark" aria-pressed="false">Dark</button>
     </div>
   </div>
-
-  <div class="spacer"></div>
-  <a class="dl" href="shop-banner-12x2ft-dark.svg" download>Dark SVG</a>
-  <a class="dl" href="shop-banner-12x2ft-light.svg" download>Light SVG</a>
 </header>
 
 <main>
-  <figure data-v="dark">
-    <figcaption><strong>Dark</strong><span>shop-banner-12x2ft-dark.svg</span></figcaption>
-    <div class="scroller"><div class="stage">
-      <div class="banner"><img src="shop-banner-12x2ft-dark.svg" alt="Dark shop banner"><div class="guides"></div></div>
-      <div class="ruler"></div>
-    </div></div>
-  </figure>
-
-  <figure data-v="light">
-    <figcaption><strong>Light</strong><span>shop-banner-12x2ft-light.svg</span></figcaption>
-    <div class="scroller"><div class="stage">
-      <div class="banner"><img src="shop-banner-12x2ft-light.svg" alt="Light shop banner"><div class="guides"></div></div>
-      <div class="ruler"></div>
-    </div></div>
-  </figure>
+  <div id="figures"></div>
 
   <p class="notes">
+    Urdu lines stay at least 1.6&nbsp;in above the bottom edge, clear of eyelets and the hem.
     Print guides show a 1&nbsp;in edge margin (dashed) and eyelets every 2&nbsp;ft along the top and bottom edges.
     These are only a preview aid and are not part of the SVG files. All colours sit inside the
     CMYK range of flex printers, and all text is outlined, so no fonts are needed at the print shop.
@@ -159,6 +149,37 @@
 
 <script>
   const root = document.documentElement;
+
+  const VARIANTS = [
+    { id: 'dark', theme: 'dark', urdu: 'none', label: 'Dark' },
+    { id: 'light', theme: 'light', urdu: 'none', label: 'Light' },
+    { id: 'dark-urdu-brands', theme: 'dark', urdu: 'brands', label: 'Dark · Urdu brand lines',
+      line: 'one Urdu line under each brand' },
+    { id: 'light-urdu-brands', theme: 'light', urdu: 'brands', label: 'Light · Urdu brand lines',
+      line: 'one Urdu line under each brand' },
+    { id: 'dark-urdu-welcome', theme: 'dark', urdu: 'welcome', label: 'Dark · Urdu “Welcome”',
+      line: 'خوش آمدید: welcome, visa guidance and software solutions, now in one place' },
+    { id: 'light-urdu-welcome', theme: 'light', urdu: 'welcome', label: 'Light · Urdu “Welcome”',
+      line: 'خوش آمدید: welcome, visa guidance and software solutions, now in one place' },
+  ];
+
+  const figures = document.getElementById('figures');
+  for (const v of VARIANTS) {
+    const file = `shop-banner-12x2ft-${v.id}.svg`;
+    const fig = document.createElement('figure');
+    fig.dataset.theme = v.theme;
+    fig.dataset.urdu = v.urdu;
+    fig.innerHTML = `
+      <figcaption>
+        <strong>${v.label}${v.line ? `<span class="urdu-line">${v.line}</span>` : ''}</strong>
+        <span class="meta"><span>${file}</span><a href="${file}" download>Download SVG</a></span>
+      </figcaption>
+      <div class="scroller"><div class="stage">
+        <div class="banner"><img src="${file}" alt="${v.label} shop banner" loading="lazy"><div class="guides"></div></div>
+        <div class="ruler"></div>
+      </div></div>`;
+    figures.appendChild(fig);
+  }
 
   // Ruler: feet labels with half-foot ticks.
   document.querySelectorAll('.ruler').forEach(r => {
@@ -199,11 +220,15 @@
     });
   }
 
-  pick('version', 'v', v => {
+  const filter = { theme: 'all', urdu: 'all' };
+  function applyFilter() {
     document.querySelectorAll('figure').forEach(f => {
-      f.hidden = v !== 'both' && f.dataset.v !== v;
+      f.hidden = (filter.theme !== 'all' && f.dataset.theme !== filter.theme)
+        || (filter.urdu !== 'all' && f.dataset.urdu !== filter.urdu);
     });
-  });
+  }
+  pick('theme', 'v', v => { filter.theme = v; applyFilter(); });
+  pick('urdu', 'v', v => { filter.urdu = v; applyFilter(); });
 
   pick('page', 'p', p => { root.dataset.page = p; });
 

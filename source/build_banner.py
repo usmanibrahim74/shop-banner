@@ -11,15 +11,22 @@ Print rules this file sticks to, so everything survives flex printing:
 - no detail thinner than 3 mm, no dot smaller than 12 mm;
 - no filters; all text converted to outlines, so no fonts are needed.
 
-Run with a Python that has fontTools installed:
+Some variants add a strip of Urdu lines along the bottom, as Pakistani shop
+banners usually have. Urdu is shaped with HarfBuzz (Nastaliq needs proper
+joining and positioning) before being outlined.
+
+Run with a Python that has fontTools and uharfbuzz installed:
 
     python build_banner.py
 """
 
 import math
 import re
+from collections import namedtuple
 from pathlib import Path
 
+import uharfbuzz as hb
+from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
@@ -41,6 +48,30 @@ CONTENT = {
     },
 }
 
+# Urdu copy. "brands" puts one line under each brand's half; "welcome" is a
+# single centred line, segments listed in reading order (right to left).
+URDU = {
+    "brands": {
+        "shaizy": "ویزا کے حصول میں قابل اعتماد رہنمائی",      # reliable guidance in getting your visa
+        "boson": "کاروبار کے لیے جدید سافٹ ویئر",               # modern software for business
+    },
+    "welcome": [
+        "خوش آمدید",                                           # welcome
+        "ویزا گائیڈنس اور سافٹ ویئر سلوشنز",                    # visa guidance and software solutions
+        "اب ایک ہی جگہ پر",                                    # now in one place
+    ],
+}
+
+# (file suffix, theme, Urdu copy or None)
+VARIANTS = [
+    ("dark", "dark", None),
+    ("light", "light", None),
+    ("dark-urdu-brands", "dark", "brands"),
+    ("light-urdu-brands", "light", "brands"),
+    ("dark-urdu-welcome", "dark", "welcome"),
+    ("light-urdu-welcome", "light", "welcome"),
+]
+
 # ----------------------------------------------------------------- layout ---
 
 # 1 unit = 0.01 inch (0.254 mm), so the canvas is 144 in x 24 in (12 ft x 2 ft).
@@ -48,7 +79,7 @@ W, H = 14400, 2400
 MID_X, MID_Y = W / 2, H / 2
 SHAIZY_ON_LEFT = False          # which brand takes the left half
 EDGE = 520                      # outer margin for contact pills (clear of eyelets/hem)
-LOGO_CX = 4900                  # logo block centre, mirrored for Boson
+LOGO_CX = 5000                  # logo block centre, mirrored for Boson
 
 TAGLINE_SIZE = 175
 TAGLINE_MAX_W = 2650            # both taglines share one size, on one line
@@ -56,6 +87,15 @@ TAGLINE_GAP = 170               # logo bottom to tagline cap top
 CONTACT_SIZE = 165
 PILL_H, PILL_GAP = 300, 90
 PILL_MAX_W = 2800
+
+# Main content is laid out in a frame: its vertical centre and a scale. With an
+# Urdu strip the frame shrinks and moves up to make room.
+Frame = namedtuple("Frame", "cy k")
+FULL = Frame(MID_Y, 1.0)
+STRIP_H = 520                   # band kept free for the Urdu lines (5.2 in)
+STRIPPED = Frame(950, 0.84)
+URDU_INK_H = 290                # tallest Urdu line, ascender to descender
+URDU_BOTTOM = H - 160           # Urdu stays 1.6 in clear of the bottom edge (eyelets, hem)
 
 # Wave bands: solid colour bands with wavy edges, stepping from Shaizy navy to
 # Boson green. Colours change along BAND_ACROSS; band edges wave along the
@@ -76,15 +116,16 @@ THEMES = {
         # Band colour keyframes, Shaizy side to Boson side; brightest where they meet.
         "bands": [(0, "#14174A"), (0.3, "#2B3090"), (0.42, "#2A46A0"), (0.5, "#1F6290"),
                   (0.58, "#167463"), (0.7, "#0F5747"), (1, "#05261E")],
+        "urdu": {"text": "#FFFFFF", "shaizy_mark": SHAIZY_GOLD, "boson_mark": BOSON_GREEN},
         "shaizy": {
-            "logo": "shaizy/shaizy-logo-dark.svg", "logo_h": 620,
+            "logo": "shaizy/shaizy-logo-dark.svg", "logo_h": 740,
             "trail": SHAIZY_GOLD, "spark": "#F6C35A",
             "text": "#FFFFFF", "tagline": "#F6C35A",
             "pill_fill": "#1A1D5C", "pill_stroke": "#4B51B0",
             "icon_bg": SHAIZY_GOLD, "icon_fg": "#1B1E55",
         },
         "boson": {
-            "logo": "bosonstudio/bosonstudio-logo-dark.svg", "logo_h": 740,
+            "logo": "bosonstudio/bosonstudio-logo-dark.svg", "logo_h": 900,
             "orbit": "#1A8A52", "particle": BOSON_GREEN, "spark": BOSON_GREEN,
             "text": "#FFFFFF", "tagline": "#8FDDB0",
             "pill_fill": "#0A3A30", "pill_stroke": "#2C7A60",
@@ -94,15 +135,16 @@ THEMES = {
     "light": {
         "bands": [(0, "#E9C47A"), (0.3, "#F8E3B4"), (0.45, "#FFF7E8"), (0.55, "#EDF8F1"),
                   (0.7, "#C9EAD6"), (1, "#9FD6B4")],
+        "urdu": {"text": "#14174A", "shaizy_mark": "#C98A12", "boson_mark": "#168A47"},
         "shaizy": {
-            "logo": "shaizy/shaizy-logo-light.svg", "logo_h": 620,
+            "logo": "shaizy/shaizy-logo-light.svg", "logo_h": 740,
             "trail": "#C98A12", "spark": "#E0A030",
             "text": "#1E2160", "tagline": "#9A6A0C",
             "pill_fill": "#FFFFFF", "pill_stroke": "#C9CBE0",
             "icon_bg": "#272B6E", "icon_fg": "#F6C35A",
         },
         "boson": {
-            "logo": "bosonstudio/bosonstudio-logo-light.svg", "logo_h": 740,
+            "logo": "bosonstudio/bosonstudio-logo-light.svg", "logo_h": 900,
             "orbit": "#4FB57E", "particle": "#168A47", "spark": BOSON_GREEN,
             "text": "#0B332C", "tagline": "#168A47",
             "pill_fill": "#FFFFFF", "pill_stroke": "#BFDCCD",
@@ -198,6 +240,50 @@ class Font:
         pen = SVGPathPen(self.glyphs, ntos=f)
         for g, gx in glyphs:
             self.glyphs[g].draw(TransformPen(pen, (s, 0, 0, -s, x + gx * s, baseline)))
+        return pen.getCommands()
+
+
+class UrduFont:
+    """Nastaliq text shaped by HarfBuzz, drawn from the font's outlines."""
+
+    def __init__(self, path):
+        self.tt = TTFont(path)
+        self.upm = self.tt["head"].unitsPerEm
+        self.glyphs = self.tt.getGlyphSet()
+        self.order = self.tt.getGlyphOrder()
+        self.hb = hb.Font(hb.Face(hb.Blob.from_file_path(str(path))))
+
+    def _shape(self, text):
+        buf = hb.Buffer()
+        buf.add_str(text)
+        buf.guess_segment_properties()
+        hb.shape(self.hb, buf, {})
+        return buf.glyph_infos, buf.glyph_positions
+
+    def _draw(self, pen, text, size, x, baseline):
+        # HarfBuzz returns RTL runs in visual (left to right) order.
+        infos, positions = self._shape(text)
+        s = size / self.upm
+        pen_x = 0
+        for info, pos in zip(infos, positions):
+            g = self.order[info.codepoint]
+            self.glyphs[g].draw(TransformPen(
+                pen, (s, 0, 0, -s, x + (pen_x + pos.x_offset) * s, baseline - pos.y_offset * s)
+            ))
+            pen_x += pos.x_advance
+
+    def width(self, text, size):
+        return sum(p.x_advance for p in self._shape(text)[1]) * size / self.upm
+
+    def bounds(self, text, size):
+        """Ink box (x0, y0, x1, y1) relative to a baseline at y=0, y down."""
+        pen = BoundsPen(self.glyphs)
+        self._draw(pen, text, size, 0, 0)
+        return pen.bounds
+
+    def path(self, text, size, x, baseline):
+        pen = SVGPathPen(self.glyphs, ntos=f)
+        self._draw(pen, text, size, x, baseline)
         return pen.getCommands()
 
 
@@ -313,19 +399,27 @@ def wave_bands(theme):
     return shapes
 
 
+def frame_y(fr, y):
+    """Map a y laid out for the full banner into the frame."""
+    return fr.cy + (y - MID_Y) * fr.k
+
+
 def sparkle(x, y, s, colour):
+    x, y, s = f(x), f(y), f(s)
+    top, bottom = f(float(y) - float(s)), f(float(y) + float(s))
+    left, right = f(float(x) - float(s)), f(float(x) + float(s))
     return (
-        f'<path d="M{x} {y - s}Q{x} {y} {x + s} {y}Q{x} {y} {x} {y + s}'
-        f'Q{x} {y} {x - s} {y}Q{x} {y} {x} {y - s}Z" fill="{colour}"/>'
+        f'<path d="M{x} {top}Q{x} {y} {right} {y}Q{x} {y} {x} {bottom}'
+        f'Q{x} {y} {left} {y}Q{x} {y} {x} {top}Z" fill="{colour}"/>'
     )
 
 
-def shaizy_art(t, logo_cx):
+def shaizy_art(t, logo_cx, fr):
     """Dashed flight path climbing over the logo, plus gold sparkles."""
     out = []
-    p0 = (EDGE + 160, 540)
-    c = (logo_cx - 1900, 600)
-    p2 = (logo_cx - 150, 210)
+    p0 = (EDGE + 160, fr.cy - 660 * fr.k)
+    c = (logo_cx - 1900, fr.cy - 600 * fr.k)
+    p2 = (logo_cx - 150, fr.cy - 900 * fr.k)
     out.append(
         f'<path d="M{f(p0[0])} {f(p0[1])}Q{f(c[0])} {f(c[1])} {f(p2[0])} {f(p2[1])}" '
         f'stroke="{t["trail"]}" stroke-width="13" stroke-dasharray="52 42" stroke-linecap="round"/>'
@@ -333,20 +427,20 @@ def shaizy_art(t, logo_cx):
     out.append(f'<circle cx="{f(p0[0])}" cy="{f(p0[1])}" r="28" fill="{t["trail"]}"/>')
     out.append(f'<circle cx="{f(p0[0])}" cy="{f(p0[1])}" r="64" stroke="{t["trail"]}" stroke-width="12"/>')
     heading = math.degrees(math.atan2(p2[1] - c[1], p2[0] - c[0]))
-    size = 240
+    size = 240 * fr.k
     out.append(
         f'<g transform="translate({f(p2[0])} {f(p2[1])}) rotate({f(heading + 45)}) '
         f'scale({f(size / 24)}) translate(-12 -12)"><path d="{PLANE}" fill="{t["trail"]}"/></g>'
     )
     for x, y, s in ((2950, 330, 72), (1150, 2090, 55), (3700, 2110, 48), (5900, 2090, 58), (6400, 420, 48)):
-        out.append(sparkle(x, y, s, t["spark"]))
+        out.append(sparkle(x, frame_y(fr, y), s * fr.k, t["spark"]))
     return out
 
 
-def boson_art(t, logo_cx):
+def boson_art(t, logo_cx, fr):
     """An orbit that seems to pass behind the merge, with particles."""
     out = []
-    cx, cy, rx, ry = logo_cx + 500, MID_Y + 50, 2700, 1050
+    cx, cy, rx, ry = logo_cx + 500, fr.cy, 2700, 1050 * fr.k
 
     def at(deg):
         a = math.radians(deg)
@@ -364,52 +458,54 @@ def boson_art(t, logo_cx):
         )
     for deg, r in ((250, 34), (318, 26), (118, 30)):
         x, y = at(deg)
-        out.append(f'<circle cx="{f(x)}" cy="{f(y)}" r="{r}" fill="{t["particle"]}"/>')
+        out.append(f'<circle cx="{f(x)}" cy="{f(y)}" r="{f(r * fr.k)}" fill="{t["particle"]}"/>')
     for x, y, s in ((13900, 300, 48), (12100, 2120, 55), (8800, 1960, 46)):
-        out.append(sparkle(x, y, s, t["spark"]))
+        out.append(sparkle(x, frame_y(fr, y), s * fr.k, t["spark"]))
     return out
 
 
 # ---------------------------------------------------------------- content ---
 
 
-def logo_block(t, info, cx, semibold, size):
+def logo_block(t, info, cx, semibold, size, fr):
     """Logo with its tagline centred underneath on one line."""
     vb_w, vb_h, inner = read_logo(t["logo"])
-    lh = t["logo_h"]
+    lh = t["logo_h"] * fr.k
+    gap = TAGLINE_GAP * fr.k
     k = lh / vb_h
     lw = vb_w * k
 
     cap = semibold.cap_h(size)
-    block_h = lh + TAGLINE_GAP + cap
-    top = MID_Y - block_h / 2 - 20
+    block_h = lh + gap + cap
+    top = fr.cy - block_h / 2 - 20 * fr.k
 
     out = [f'<g transform="translate({f(cx - lw / 2)} {f(top)}) scale({k:.5f})">\n{inner}\n</g>']
-    y = top + lh + TAGLINE_GAP + cap
+    y = top + lh + gap + cap
     d = semibold.path(info["tagline"], size, cx, y, anchor="middle", tracking=0.01)
     out.append(f'<path d="{d}" fill="{t["tagline"]}"/>')
     return out
 
 
-def contacts_block(t, info, medium, align, size):
+def contacts_block(t, info, medium, align, size, fr):
     """Three equal-width pills; align is 'left' or 'right' (outer edge)."""
     items = [("phone", info["phone"]), ("mail", info["email"]), ("globe", info["website"])]
-    pad_l, pad_r = PILL_H + 40, 140
+    ph, gap = PILL_H * fr.k, PILL_GAP * fr.k
+    pad_l, pad_r = ph + 40, 140
     pill_w = max(medium.width(v, size) for _, v in items) + pad_l + pad_r
     x = EDGE if align == "left" else W - EDGE - pill_w
-    block_h = 3 * PILL_H + 2 * PILL_GAP
-    y = MID_Y - block_h / 2
+    block_h = 3 * ph + 2 * gap
+    y = fr.cy - block_h / 2
 
     cap = medium.cap_h(size)
-    ir = PILL_H / 2 - 30
+    ir = ph / 2 - 30 * fr.k
     out = []
     for icon, value in items:
-        cy = y + PILL_H / 2
+        cy = y + ph / 2
         out.append(
-            f'<rect x="{f(x)}" y="{f(y)}" width="{f(pill_w)}" height="{PILL_H}" rx="{PILL_H / 2}" '
+            f'<rect x="{f(x)}" y="{f(y)}" width="{f(pill_w)}" height="{f(ph)}" rx="{f(ph / 2)}" '
             f'fill="{t["pill_fill"]}" stroke="{t["pill_stroke"]}" stroke-width="12"/>'
         )
-        icx = x + PILL_H / 2
+        icx = x + ph / 2
         out.append(f'<circle cx="{f(icx)}" cy="{f(cy)}" r="{f(ir)}" fill="{t["icon_bg"]}"/>')
         isz = ir * 1.05
         out.append(
@@ -418,7 +514,63 @@ def contacts_block(t, info, medium, align, size):
             f'stroke-linejoin="round">{ICONS[icon]}</g>'
         )
         out.append(f'<path d="{medium.path(value, size, x + pad_l, cy + cap / 2)}" fill="{t["text"]}"/>')
-        y += PILL_H + PILL_GAP
+        y += ph + gap
+    return out
+
+
+def diamond(cx, cy, r, colour):
+    return f'<path d="M{f(cx)} {f(cy - r)}L{f(cx + r)} {f(cy)}L{f(cx)} {f(cy + r)}L{f(cx - r)} {f(cy)}Z" fill="{colour}"/>'
+
+
+def urdu_strip(copy, colours, urdu, shaizy_half_cx, boson_half_cx):
+    """Urdu lines along the bottom, the way Pakistani shop banners end."""
+    y0 = H - STRIP_H
+    out = []
+
+    if copy == "brands":
+        c = URDU["brands"]
+        placed = [(c["shaizy"], shaizy_half_cx), (c["boson"], boson_half_cx)]
+        texts = [t for t, _ in placed]
+    else:
+        texts = URDU["welcome"]
+
+    # Size so the tallest line fills URDU_INK_H; share one baseline.
+    probe = 100
+    boxes = [urdu.bounds(t, probe) for t in texts]
+    ink = max(b[3] for b in boxes) - min(b[1] for b in boxes)
+    size = probe * URDU_INK_H / ink
+    boxes = [urdu.bounds(t, size) for t in texts]
+    top, bottom = min(b[1] for b in boxes), max(b[3] for b in boxes)
+    zone_mid = (y0 + 20 + URDU_BOTTOM) / 2
+    baseline = zone_mid - (top + bottom) / 2
+    assert baseline + bottom <= URDU_BOTTOM and baseline + top >= y0, "Urdu does not fit the strip"
+    mark_y = baseline + (top + bottom) / 2
+    # Separator colours run with the reading order, so each sits nearer its brand.
+    near_right, near_left = (
+        (colours["boson_mark"], colours["shaizy_mark"]) if SHAIZY_ON_LEFT
+        else (colours["shaizy_mark"], colours["boson_mark"])
+    )
+
+    if copy == "brands":
+        xs = []
+        for (text, cx), b in zip(placed, boxes):
+            x = cx - (b[0] + b[2]) / 2
+            out.append(f'<path d="{urdu.path(text, size, x, baseline)}" fill="{colours["text"]}"/>')
+            xs.append((x + b[0], x + b[2]))
+        (_, a1), (b0, _) = sorted(xs)
+        assert b0 - a1 > 400, "Urdu lines too close; shorten the copy"
+    else:
+        gap = 300
+        widths = [b[2] - b[0] for b in boxes]
+        total = sum(widths) + gap * 2 * (len(texts) - 1)
+        x_right = MID_X + total / 2
+        for i, (text, b, w) in enumerate(zip(texts, boxes, widths)):
+            x = x_right - w - b[0]
+            out.append(f'<path d="{urdu.path(text, size, x, baseline)}" fill="{colours["text"]}"/>')
+            x_right -= w
+            if i < len(texts) - 1:
+                out.append(diamond(x_right - gap, mark_y, 48, (near_right, near_left)[i]))
+                x_right -= 2 * gap
     return out
 
 
@@ -430,8 +582,9 @@ def mirrored(parts):
     return [f'<g transform="translate({W} 0) scale(-1 1)">', *parts, "</g>"]
 
 
-def build(name, theme, semibold, medium):
+def build(name, theme, copy, semibold, medium, urdu):
     ts, tb = theme["shaizy"], theme["boson"]
+    fr = STRIPPED if copy else FULL
     shaizy_cx, boson_cx = (LOGO_CX, W - LOGO_CX) if SHAIZY_ON_LEFT else (W - LOGO_CX, LOGO_CX)
     shaizy_side, boson_side = ("left", "right") if SHAIZY_ON_LEFT else ("right", "left")
 
@@ -441,15 +594,20 @@ def build(name, theme, semibold, medium):
         medium, [i[k] for i in infos for k in ("phone", "email", "website")],
         CONTACT_SIZE, PILL_MAX_W, pad=PILL_H + 40 + 140,
     )
+    tag_size *= fr.k
+    contact_size *= fr.k
 
     parts = wave_bands(theme)
     # The art is laid out for Shaizy on the left; mirror it when the brands swap.
-    art = boson_art(tb, W - LOGO_CX) + shaizy_art(ts, LOGO_CX)
+    art = boson_art(tb, W - LOGO_CX, fr) + shaizy_art(ts, LOGO_CX, fr)
     parts += art if SHAIZY_ON_LEFT else mirrored(art)
-    parts += logo_block(ts, CONTENT["shaizy"], shaizy_cx, semibold, tag_size)
-    parts += logo_block(tb, CONTENT["boson"], boson_cx, semibold, tag_size)
-    parts += contacts_block(ts, CONTENT["shaizy"], medium, shaizy_side, contact_size)
-    parts += contacts_block(tb, CONTENT["boson"], medium, boson_side, contact_size)
+    parts += logo_block(ts, CONTENT["shaizy"], shaizy_cx, semibold, tag_size, fr)
+    parts += logo_block(tb, CONTENT["boson"], boson_cx, semibold, tag_size, fr)
+    parts += contacts_block(ts, CONTENT["shaizy"], medium, shaizy_side, contact_size, fr)
+    parts += contacts_block(tb, CONTENT["boson"], medium, boson_side, contact_size, fr)
+    if copy:
+        halves = (W / 4, 3 * W / 4) if SHAIZY_ON_LEFT else (3 * W / 4, W / 4)
+        parts += urdu_strip(copy, theme["urdu"], urdu, *halves)
 
     svg = (
         f'<svg width="144in" height="24in" viewBox="0 0 {W} {H}" fill="none" '
@@ -464,5 +622,6 @@ def build(name, theme, semibold, medium):
 if __name__ == "__main__":
     semibold = Font(HERE / "fonts/Poppins-SemiBold.ttf")
     medium = Font(HERE / "fonts/Poppins-Medium.ttf")
-    for name, theme in THEMES.items():
-        build(name, theme, semibold, medium)
+    urdu = UrduFont(HERE / "fonts/NotoNastaliqUrdu-Bold.ttf")
+    for name, theme, copy in VARIANTS:
+        build(name, THEMES[theme], copy, semibold, medium, urdu)
