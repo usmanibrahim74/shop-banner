@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shop Banner Viewer</title>
+<style>
+  :root {
+    --bg: #f4f4f1;
+    --surface: #ffffff;
+    --ink: #17181c;
+    --muted: #6b6e76;
+    --line: #dcdcd6;
+    --accent: #17181c;
+    --guide: #e5484d;
+  }
+  :root[data-page="dark"] {
+    --bg: #111216;
+    --surface: #1b1c22;
+    --ink: #f2f2f0;
+    --muted: #9a9ca4;
+    --line: #2e3038;
+    --accent: #f2f2f0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+    padding: 14px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0 8px 0 0; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  .group { display: flex; align-items: center; gap: 6px; }
+  .group > label { color: var(--muted); margin-right: 2px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    border: 0; background: transparent; color: var(--ink);
+    padding: 6px 12px; font: inherit; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+  input[type="range"] { width: 140px; accent-color: var(--accent); }
+  #zoomLabel { min-width: 48px; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .spacer { flex: 1; }
+  a.dl {
+    color: var(--ink); text-decoration: none;
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px;
+  }
+  a.dl:hover { border-color: var(--muted); }
+
+  main { padding: 32px 24px 64px; }
+  figure { margin: 0 0 48px; }
+  figcaption {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 10px; color: var(--muted);
+  }
+  figcaption strong { color: var(--ink); font-weight: 600; }
+  .scroller { overflow-x: auto; padding-bottom: 8px; }
+  .stage { position: relative; }
+  .banner {
+    position: relative;
+    aspect-ratio: 6 / 1;
+    box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.10);
+  }
+  .banner img { display: block; width: 100%; height: 100%; }
+
+  /* Guides: 1 in edge margin and eyelets every 2 ft (positions as % of 144 x 24 in). */
+  .guides { position: absolute; inset: 0; pointer-events: none; display: none; }
+  .show-guides .guides { display: block; }
+  .margin {
+    position: absolute;
+    left: calc(100% / 144); right: calc(100% / 144);
+    top: calc(100% / 24); bottom: calc(100% / 24);
+    border: 1px dashed var(--guide);
+  }
+  .eyelet {
+    position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+    border: 2px solid var(--guide); border-radius: 50%;
+  }
+
+  .ruler { position: relative; height: 26px; margin-top: 6px; border-top: 1px solid var(--muted); }
+  .tick { position: absolute; top: 0; height: 8px; border-left: 1px solid var(--muted); }
+  .tick.half { height: 4px; }
+  .tick span {
+    position: absolute; top: 9px; transform: translateX(-50%);
+    font-size: 11px; color: var(--muted); white-space: nowrap;
+  }
+  .notes { max-width: 720px; color: var(--muted); }
+  .notes code { color: var(--ink); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Shop banner <span>· 12 ft × 2 ft · Shaizy × Boson Studio</span></h1>
+
+  <div class="group">
+    <label>Version</label>
+    <div class="seg" id="version">
+      <button data-v="both" aria-pressed="true">Both</button>
+      <button data-v="dark" aria-pressed="false">Dark</button>
+      <button data-v="light" aria-pressed="false">Light</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <label for="zoom">Zoom</label>
+    <input type="range" id="zoom" min="100" max="600" step="10" value="100">
+    <span id="zoomLabel">Fit</span>
+  </div>
+
+  <label class="check"><input type="checkbox" id="guides"> Print guides</label>
+
+  <div class="group">
+    <label>Page</label>
+    <div class="seg" id="page">
+      <button data-p="light" aria-pressed="true">Light</button>
+      <button data-p="dark" aria-pressed="false">Dark</button>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+  <a class="dl" href="shop-banner-12x2ft-dark.svg" download>Dark SVG</a>
+  <a class="dl" href="shop-banner-12x2ft-light.svg" download>Light SVG</a>
+</header>
+
+<main>
+  <figure data-v="dark">
+    <figcaption><strong>Dark</strong><span>shop-banner-12x2ft-dark.svg</span></figcaption>
+    <div class="scroller"><div class="stage">
+      <div class="banner"><img src="shop-banner-12x2ft-dark.svg" alt="Dark shop banner"><div class="guides"></div></div>
+      <div class="ruler"></div>
+    </div></div>
+  </figure>
+
+  <figure data-v="light">
+    <figcaption><strong>Light</strong><span>shop-banner-12x2ft-light.svg</span></figcaption>
+    <div class="scroller"><div class="stage">
+      <div class="banner"><img src="shop-banner-12x2ft-light.svg" alt="Light shop banner"><div class="guides"></div></div>
+      <div class="ruler"></div>
+    </div></div>
+  </figure>
+
+  <p class="notes">
+    Print guides show a 1&nbsp;in edge margin (dashed) and eyelets every 2&nbsp;ft along the top and bottom edges.
+    These are only a preview aid and are not part of the SVG files. All colours sit inside the
+    CMYK range of flex printers, and all text is outlined, so no fonts are needed at the print shop.
+    To change the text, edit <code>source/build_banner.py</code> and run it again.
+  </p>
+</main>
+
+<script>
+  const root = document.documentElement;
+
+  // Ruler: feet labels with half-foot ticks.
+  document.querySelectorAll('.ruler').forEach(r => {
+    for (let i = 0; i <= 24; i++) {
+      const t = document.createElement('div');
+      t.className = 'tick' + (i % 2 ? ' half' : '');
+      t.style.left = (i / 24 * 100) + '%';
+      if (i % 2 === 0) {
+        const shift = i === 0 ? '0' : i === 24 ? '-100%' : '-50%';
+        t.innerHTML = `<span style="transform: translateX(${shift})">${i / 2} ft</span>`;
+      }
+      r.appendChild(t);
+    }
+  });
+
+  // Guides: eyelets at corners and every 2 ft, 1 in in from the edge.
+  document.querySelectorAll('.guides').forEach(g => {
+    g.innerHTML = '<div class="margin"></div>';
+    for (let ft = 0; ft <= 12; ft += 2) {
+      const x = Math.min(Math.max(ft * 12, 1), 143) / 144 * 100;
+      for (const y of [1 / 24 * 100, 23 / 24 * 100]) {
+        const e = document.createElement('div');
+        e.className = 'eyelet';
+        e.style.left = x + '%';
+        e.style.top = y + '%';
+        g.appendChild(e);
+      }
+    }
+  });
+
+  function pick(groupId, attr, onChange) {
+    const group = document.getElementById(groupId);
+    group.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      group.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+      onChange(b.dataset[attr]);
+    });
+  }
+
+  pick('version', 'v', v => {
+    document.querySelectorAll('figure').forEach(f => {
+      f.hidden = v !== 'both' && f.dataset.v !== v;
+    });
+  });
+
+  pick('page', 'p', p => { root.dataset.page = p; });
+
+  const zoom = document.getElementById('zoom');
+  const zoomLabel = document.getElementById('zoomLabel');
+  zoom.addEventListener('input', () => {
+    const z = +zoom.value;
+    zoomLabel.textContent = z === 100 ? 'Fit' : z + '%';
+    document.querySelectorAll('.stage').forEach(s => { s.style.width = z + '%'; });
+  });
+
+  document.getElementById('guides').addEventListener('change', e => {
+    document.body.classList.toggle('show-guides', e.target.checked);
+  });
+</script>
+</body>
+</html>
